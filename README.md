@@ -19,3 +19,8 @@ A next step in this model would be to show how crossfeeding is a starting point 
 that result from the interaction of lower level ones. In the current model, all bacteria interact at random with other bacteria. With
 a ssortative interaction and assortative reproduction we could see the emergence of entities with boundaries that are composed of the
 different strains of bacteria in the population.
+
+
+The Netlogo files requires the download of Netlogo: https://ccl.northwestern.edu/netlogo/
+You will also find tutorial for using Netlogo on this website. 
+A description of the different command can be found in the comment of the code which is any text following a ";" in Netlogo.
