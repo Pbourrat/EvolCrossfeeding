@@ -1,0 +1,1186 @@
+turtles-own [ energy P1 P2 T]
+patches-own [ food waste M1 M2 NewFood]
+
+
+; Each bacteria has a level of energy, an active/inactive (due to the absence/presence of one mutation) gene for degrading a molecule M2 into M1 (P2),
+; an active/inactive gene for degrading a molecule M1 into food (P1)
+; and a time since the last event of reproduction it comes from (T)
+
+; each patch in which bacteria live is characterised by a level of food, a level of waste, a level of a
+; molecules M1 and M2, and a time since the last food was added to the patch
+
+to setup
+  clear-all
+  setup-bacteria
+  setup-patches
+  reset-ticks
+end
+; At the beginning of each simulation by pressing SETUP the simulation is reset and setup bacteria and patch
+
+
+to setup-bacteria
+  set-default-shape turtles "circle" 
+ ; choose the shape "circle" for bacteria" 
+  
+  ask patches [
+    
+    let dice random-float 1
+  if dice > 0
+    [sprout 1 [
+    set T random time-between-reproduction 
+    set energy 1000
+    ; set bacteria with a level of energy and a random time before last time of reproduction
+  
+    ifelse initial-generalist? 
+    [
+    set P1 1
+    set P2 1
+    ]
+  ; if the initial-generalist? switch is on, 100% bacteria can degrade M2 into food
+    [
+      ifelse initial-specialist?
+      [
+        let dice2 random-float 1
+       ifelse dice2 >= 0.5
+        [
+    set P1 1
+    set P2 0
+    ]
+        [
+    set P1 0
+    set P2 1
+    ]
+  ; if the initial-specialist? switch is on, 50% bacteria can degrade M2 into M1 and 50% M1 into food      
+      
+        ]
+      [
+    set P1 random 2
+    set P2 random 2
+    
+    ]
+  ; if the initial-specialist? and initial-generalist? switchs are off, same probability for each bacteria to have the mutation for each gene to be on or off   
+    ]]]]
+   ask turtles [cheater-or-not]
+end
+
+to setup-patches
+resize-world 0 20 0 size-world 0 20
+ask patches with [pycor = 0 or pycor = size-world] [
+    set M1 0
+    set M2 initial-M2-quantity
+    ]
+ask patches [set waste random-float waste-threshold]
+end
+
+; Sets the size of the world and asks the patches 
+;  to setup their level of M2 at a fixed level and waste at a random level  
+to go
+    grow-food
+    clean-waste
+    ask turtles [
+    metabolise
+    ;move
+    ]
+    diffuse-products
+   ask turtles [
+    reproduce
+    mutate
+    
+  ]
+  tick
+end
+
+
+to reproduce  ;; bacteria procedure
+ 
+ ifelse T >= time-between-reproduction
+ [
+   ifelse push-others
+   [ if energy > reproduction-threshold [
+     set energy (energy - reproduction-cost) / 2
+     let slot one-of neighbors
+     hatch 1 [
+       ask slot [
+          ask turtles-here [
+            let neigh one-of neighbors with [count turtles-here = 0]
+            if count turtles-here >= 1
+             [ifelse neigh != slot and neigh != nobody [move-to neigh ]
+                                  [ die]]]
+         ] 
+       
+       move-to slot
+        ]]]
+        
+ [let free-slot one-of neighbors with [count turtles-here < number-per-patch]
+  if energy > reproduction-threshold and free-slot != nobody [
+      ;; if the location exists hatch a copy of the current turtle in the free slot
+      set energy (energy - reproduction-cost) / 2
+      set T 0
+      hatch 1 [
+        move-to free-slot
+      ]
+    ]]]
+ 
+ [set T T + 1]
+   
+end
+
+; tell the bacteria to reproduce if they have a sufficient level of resources and
+; have waited enough before the last event of reproduction
+; if push-others switch is on, put a constraint on space (two bacteria connot remain on the same patch
+; following an event of reproduction
+
+
+to grow-food  ;; patch procedure
+  ask patches with [pycor = 0 or pycor = size-world] [
+    set NewFood NewFood + amount-new-food
+    if NewFood >= time-between-new-food
+    [ 
+    if chance-food > random-float 1[
+      set M2 M2 + 1
+      set NewFood NewFood - time-between-new-food]
+    
+    if food >= 100 [set food 100]
+    
+    ]]
+  
+end
+; prcedure to decide when M2 should be added for a given pacth. 
+; Also set the maximum amount of food per patch to be 100
+
+to eat
+    if food >= food-intake ;; and P1 + P2 >= 1
+      [set food food - food-intake
+       set energy energy + food-intake * food-energy
+       set waste waste + level-of-waste * food-intake]
+      
+    if food < food-intake and food >= 1 ;; and P1 + P2 >= 1
+      [set energy energy + food * food-energy
+        set food food - food]
+      
+      
+    if energy > 1000 [set energy 1000] 
+end
+
+; procedure for bacteria to eat. If their is enough food on the patch on which bacteria are, they convert
+; they convert food into energy and prduce some waste.
+
+;to move
+ ; let free-slot one-of neighbors with [count turtles-here <= 1]
+  ;if  free-slot != nobody and [food] of free-slot > [food] of patch-here 
+  ;[move-to free-slot]
+;end 
+
+to move
+
+let free-slot one-of neighbors with [count turtles-here <= number-per-patch - 1]
+    
+  if free-slot != nobody and [food] of free-slot >= [food] of self  
+   [move-to free-slot]
+  
+end
+
+; bacteria move if there is space and more food than the patch they are in
+
+to metabolise
+ set energy energy - metabolism   
+ 
+ ; bacteria lose energy at each time-slice due to their basal metabolism
+
+ if [M1] of patch-here < 1 and [M2] of patch-here >= 1 and [M2] of patch-here < 2 and P1 = 1 and P2 = 1 
+     
+     [ set M2 (M2 - 1)
+       set food food + 10
+       if food >= 100 [set food 100]]
+       
+ if [M1] of patch-here < 1 and [M2] of patch-here >= 1 and [M2] of patch-here < 2 and P1 = 0 and P2 = 1 
+     
+     [ set M2 (M2 - 1)
+       set M1 (M1 + 1)]
+  
+ if [M1] of patch-here < 1 and [M2] of patch-here >= 2 and P1 = 0 and P2 = 1 
+     
+     [ set M2 (M2 - 2)
+       set M1 (M1 + 2)]
+     
+ if [M1] of patch-here >= 1 and [M1] of patch-here < 2 and[M2] of patch-here < 1 and P1 = 1 
+     
+     [ set M1 (M1 - 1)
+       set food food + 10]
+     
+     
+ if [M1] of patch-here >= 1 and [M1] of patch-here < 2 and [M2] of patch-here >= 1 and P1 = 1 and P2 = 1
+     
+     [ set M2 (M2 - 1)
+       set food food + 10
+       if food >= 100 [set food 100]]
+  
+ if [M1] of patch-here >= 1 and [M1] of patch-here < 2 and [M2] of patch-here >= 1 and P1 = 1 and P2 = 0
+     
+     [ set M1 (M1 - 1)
+       set food food + 10
+       if food >= 100 [set food 100]]
+  
+  
+ if [M1] of patch-here >= 1 and [M1] of patch-here < 2 and [M2] of patch-here >= 1 and [M2] of patch-here < 2 and P1 = 0 and P2 = 1
+     
+     [ set M2 (M2 - 1)
+       set M1 (M1 + 1)]
+  
+ if [M1] of patch-here >= 1 and [M1] of patch-here < 2 and [M2] of patch-here >= 2 and P1 = 0 and P2 = 1
+     
+     [ set M2 (M2 - 2)
+       set M1 (M1 + 2)]
+     
+     
+ if [M1] of patch-here >= 2 and P1 = 1
+     
+     [ set M1 (M1 - 2)
+       set food food + 20
+       if food >= 100 [set food 100]]
+ 
+ if [M1] of patch-here >= 2 and [M2] of patch-here >= 1 and [M2] of patch-here < 2 and P1 = 0 and P2 = 1
+     
+     [ set M2 (M2 - 1)
+       set M1 (M1 + 1)]
+ 
+ if [M1] of patch-here >= 2 and [M2] of patch-here >= 2 and P1 = 0 and P2 = 1
+     
+     [ set M2 (M2 - 2)
+       set M1 (M1 + 2)]
+    
+   eat
+   
+   let sum-pathway P1 + P2 
+            
+    set energy energy - Pathway-cost * sum-pathway    
+    
+    if energy <= 0
+    [die]
+ 
+end
+
+; Gives the rule for bacteria to transform M2 into M1 and M1 into food depending on the presence or absence of
+; the mutation at each locus
+; if energy of bacteria reaches 0 the bacteria dies
+; there is a energy cost in having to produce a protein for degrading M2 into M1 and M1 into food. The cost is
+; thus proportional to the number of active genes (2, 1 or 0)
+
+to diffuse-products
+
+diffuse M2 diffusion-level
+diffuse M1 diffusion-level
+diffuse food diffusion-level
+diffuse waste diffusion-level
+
+end 
+; each product (M2, M1 and food) diffuse in the world
+
+to mutate
+ ifelse one-step-mutation
+ [
+    let dice random-float 1
+    let dice2 random 4 + 1
+    if dice < mutation-rate / 4[
+      if dice2 = 1 [set P1 0
+                    set P2 0]
+      if dice2 = 2 [set P1 1 
+                    set P2 0]
+      
+      if dice2 = 3 [set P1 1 
+                    set P2 1]
+      
+      if dice2 = 4 [set P1 0 
+                    set P2 1]
+      ]]
+        
+    [ let dice random-float 1
+    let dice2 random 2 + 1
+    if dice < mutation-rate * 2 [
+      if dice2 = 1 [set P1 random 2]
+      if dice2 = 2 [set P2 random 2]
+      ]]
+    cheater-or-not
+end 
+
+; Bacteria can mutate. If "one-step-mutation" switch is one, the bacteria can will mutatate simultaneously on
+; the two loci. Othewise the mutation will be independent
+
+to cheater-or-not
+    if P1 + P2 = 0 [set color red]
+    if P1 = 1 and P2 = 0 [set color yellow]
+    if P1 = 0 and  P2 = 1 [set color blue]
+    if P1 + P2 = 2 [set color green]
+  
+end
+
+; set the different colors following the type of bacteria (two genes 
+to clean-waste
+  ask turtles [
+    if waste > waste-threshold
+    [die]
+  ]
+  ask patches [
+    set waste waste - clean-level
+    if waste <= 0 [set waste 0]]
+end
+
+; if the waste level is too important, bacteria die (toxicity of waste). 
+; Some quantity of waste is eliminated at each time step. 
+@#$#@#$#@
+GRAPHICS-WINDOW
+0
+0
+245
+41
+-1
+-1
+1.0
+1
+10
+1
+1
+1
+0
+1
+1
+1
+0
+20
+0
+9
+0
+20
+1
+1
+1
+ticks
+30.0
+
+BUTTON
+218
+42
+273
+75
+go
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+157
+42
+212
+75
+setup
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+7
+147
+215
+180
+reproduction-threshold
+reproduction-threshold
+0.0
+1000.0
+104
+1.0
+1
+NIL
+HORIZONTAL
+
+SLIDER
+9
+80
+125
+113
+metabolism
+metabolism
+0.0
+99.0
+15
+1.0
+1
+NIL
+HORIZONTAL
+
+SLIDER
+7
+115
+215
+148
+reproduction-cost
+reproduction-cost
+0.0
+99.0
+31
+1.0
+1
+NIL
+HORIZONTAL
+
+SLIDER
+6
+180
+178
+213
+chance-food
+chance-food
+0
+1
+1
+0.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+213
+177
+246
+food-energy
+food-energy
+0
+1000
+50
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+278
+177
+311
+initial-M2-quantity
+initial-M2-quantity
+0
+100
+6
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+6
+246
+178
+279
+mutation-rate
+mutation-rate
+0
+0.03
+0.0132
+0.0001
+1
+NIL
+HORIZONTAL
+
+MONITOR
+339
+72
+473
+117
+NIL
+mean [M2] of patches
+17
+1
+11
+
+MONITOR
+472
+72
+606
+117
+NIL
+mean [M1] of patches
+17
+1
+11
+
+MONITOR
+606
+72
+742
+117
+NIL
+mean [Food] of patches
+17
+1
+11
+
+MONITOR
+338
+118
+500
+163
+means metabolic pathways
+mean [P1] of turtles + mean [P2] of turtles
+17
+1
+11
+
+MONITOR
+500
+118
+609
+163
+NIL
+count turtles
+17
+1
+11
+
+SLIDER
+6
+311
+178
+344
+diffusion-level
+diffusion-level
+0
+1
+0.25
+0.05
+1
+NIL
+HORIZONTAL
+
+PLOT
+185
+194
+385
+344
+Mean energy of turtles
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [energy] of turtles"
+
+MONITOR
+425
+359
+586
+404
+NIL
+count turtles with [P1 = 1]
+17
+1
+11
+
+MONITOR
+424
+406
+583
+451
+NIL
+count turtles with [P2 = 1]
+17
+1
+11
+
+PLOT
+388
+193
+588
+343
+Turtles pathways
+NIL
+NIL
+0.0
+10.0
+0.0
+1.0
+true
+true
+"" ""
+PENS
+"P1" 1.0 0 -1184463 true "" "plot count turtles with [P1 = 1 and P2 = 0] / count turtles"
+"P2" 1.0 0 -13345367 true "" "plot count turtles with [P2 = 1 and P1 = 0] / count turtles"
+"Cheater" 1.0 0 -2674135 true "" "plot count turtles with [P2 = 0 and P1 = 0] / count turtles"
+
+PLOT
+215
+349
+415
+499
+specialist vs generalist
+NIL
+NIL
+0.0
+10.0
+0.0
+1.0
+true
+true
+"" ""
+PENS
+"1" 1.0 0 -16777216 true "" "plot  count turtles with [P1 + P2 = 1] / count turtles"
+"2" 1.0 0 -7500403 true "" "plot  count turtles with [P1 + P2 = 2] / count turtles"
+"0" 1.0 0 -955883 true "" "plot  count turtles with [P1 + P2 = 0] / count turtles"
+
+SWITCH
+2
+559
+150
+592
+initial-generalist?
+initial-generalist?
+1
+1
+-1000
+
+SLIDER
+4
+418
+176
+451
+Pathway-cost
+Pathway-cost
+0
+100
+23
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+-2
+521
+182
+554
+time-between-new-food
+time-between-new-food
+1
+30
+3
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+4
+353
+205
+386
+time-between-reproduction
+time-between-reproduction
+0
+100
+10
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+0
+486
+172
+519
+food-intake
+food-intake
+0
+10
+1
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+4
+386
+176
+419
+number-per-patch
+number-per-patch
+0
+10
+1
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+7
+451
+179
+484
+amount-new-food
+amount-new-food
+0
+100
+1
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+2
+601
+174
+634
+size-world
+size-world
+0
+20
+9
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+128
+81
+286
+114
+one-step-mutation
+one-step-mutation
+1
+1
+-1000
+
+SWITCH
+151
+559
+274
+592
+push-others
+push-others
+1
+1
+-1000
+
+SLIDER
+314
+546
+486
+579
+level-of-waste
+level-of-waste
+0
+1
+0.2
+0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+316
+581
+488
+614
+waste-threshold
+waste-threshold
+0
+100
+10
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+315
+614
+487
+647
+clean-level
+clean-level
+0
+1
+0.09
+0.01
+1
+NIL
+HORIZONTAL
+
+MONITOR
+612
+119
+763
+164
+NIL
+mean [waste] of patches
+17
+1
+11
+
+PLOT
+592
+195
+752
+339
+waste level
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [waste] of patches"
+
+SWITCH
+500
+548
+643
+581
+initial-specialist?
+initial-specialist?
+0
+1
+-1000
+
+@#$#@#$#@
+## WHAT IS IT?
+## HOW IT WORKS
+## HOW TO USE IT
+## THINGS TO NOTICE
+## THINGS TO TRY
+## EXTENDING THE MODEL
+## NETLOGO FEATURES
+## CREDITS AND REFERENCES
+## HOW TO CITE
+## COPYRIGHT AND LICENSE
+@#$#@#$#@
+default
+true
+0
+Polygon -7500403 true true 150 5 40 250 150 205 260 250
+
+airplane
+true
+0
+Polygon -7500403 true true 150 0 135 15 120 60 120 105 15 165 15 195 120 180 135 240 105 270 120 285 150 270 180 285 210 270 165 240 180 180 285 195 285 165 180 105 180 60 165 15
+
+arrow
+true
+0
+Polygon -7500403 true true 150 0 0 150 105 150 105 293 195 293 195 150 300 150
+
+box
+false
+0
+Polygon -7500403 true true 150 285 285 225 285 75 150 135
+Polygon -7500403 true true 150 135 15 75 150 15 285 75
+Polygon -7500403 true true 15 75 15 225 150 285 150 135
+Line -16777216 false 150 285 150 135
+Line -16777216 false 150 135 15 75
+Line -16777216 false 150 135 285 75
+
+bug
+true
+0
+Circle -7500403 true true 96 182 108
+Circle -7500403 true true 110 127 80
+Circle -7500403 true true 110 75 80
+Line -7500403 true 150 100 80 30
+Line -7500403 true 150 100 220 30
+
+butterfly
+true
+0
+Polygon -7500403 true true 150 165 209 199 225 225 225 255 195 270 165 255 150 240
+Polygon -7500403 true true 150 165 89 198 75 225 75 255 105 270 135 255 150 240
+Polygon -7500403 true true 139 148 100 105 55 90 25 90 10 105 10 135 25 180 40 195 85 194 139 163
+Polygon -7500403 true true 162 150 200 105 245 90 275 90 290 105 290 135 275 180 260 195 215 195 162 165
+Polygon -16777216 true false 150 255 135 225 120 150 135 120 150 105 165 120 180 150 165 225
+Circle -16777216 true false 135 90 30
+Line -16777216 false 150 105 195 60
+Line -16777216 false 150 105 105 60
+
+car
+false
+0
+Polygon -7500403 true true 300 180 279 164 261 144 240 135 226 132 213 106 203 84 185 63 159 50 135 50 75 60 0 150 0 165 0 225 300 225 300 180
+Circle -16777216 true false 180 180 90
+Circle -16777216 true false 30 180 90
+Polygon -16777216 true false 162 80 132 78 134 135 209 135 194 105 189 96 180 89
+Circle -7500403 true true 47 195 58
+Circle -7500403 true true 195 195 58
+
+circle
+false
+0
+Circle -7500403 true true 0 0 300
+
+circle 2
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+
+cow
+false
+0
+Polygon -7500403 true true 200 193 197 249 179 249 177 196 166 187 140 189 93 191 78 179 72 211 49 209 48 181 37 149 25 120 25 89 45 72 103 84 179 75 198 76 252 64 272 81 293 103 285 121 255 121 242 118 224 167
+Polygon -7500403 true true 73 210 86 251 62 249 48 208
+Polygon -7500403 true true 25 114 16 195 9 204 23 213 25 200 39 123
+
+cylinder
+false
+0
+Circle -7500403 true true 0 0 300
+
+dot
+false
+0
+Circle -7500403 true true 90 90 120
+
+face happy
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 255 90 239 62 213 47 191 67 179 90 203 109 218 150 225 192 218 210 203 227 181 251 194 236 217 212 240
+
+face neutral
+false
+0
+Circle -7500403 true true 8 7 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Rectangle -16777216 true false 60 195 240 225
+
+face sad
+false
+0
+Circle -7500403 true true 8 8 285
+Circle -16777216 true false 60 75 60
+Circle -16777216 true false 180 75 60
+Polygon -16777216 true false 150 168 90 184 62 210 47 232 67 244 90 220 109 205 150 198 192 205 210 220 227 242 251 229 236 206 212 183
+
+fish
+false
+0
+Polygon -1 true false 44 131 21 87 15 86 0 120 15 150 0 180 13 214 20 212 45 166
+Polygon -1 true false 135 195 119 235 95 218 76 210 46 204 60 165
+Polygon -1 true false 75 45 83 77 71 103 86 114 166 78 135 60
+Polygon -7500403 true true 30 136 151 77 226 81 280 119 292 146 292 160 287 170 270 195 195 210 151 212 30 166
+Circle -16777216 true false 215 106 30
+
+flag
+false
+0
+Rectangle -7500403 true true 60 15 75 300
+Polygon -7500403 true true 90 150 270 90 90 30
+Line -7500403 true 75 135 90 135
+Line -7500403 true 75 45 90 45
+
+flower
+false
+0
+Polygon -10899396 true false 135 120 165 165 180 210 180 240 150 300 165 300 195 240 195 195 165 135
+Circle -7500403 true true 85 132 38
+Circle -7500403 true true 130 147 38
+Circle -7500403 true true 192 85 38
+Circle -7500403 true true 85 40 38
+Circle -7500403 true true 177 40 38
+Circle -7500403 true true 177 132 38
+Circle -7500403 true true 70 85 38
+Circle -7500403 true true 130 25 38
+Circle -7500403 true true 96 51 108
+Circle -16777216 true false 113 68 74
+Polygon -10899396 true false 189 233 219 188 249 173 279 188 234 218
+Polygon -10899396 true false 180 255 150 210 105 210 75 240 135 240
+
+house
+false
+0
+Rectangle -7500403 true true 45 120 255 285
+Rectangle -16777216 true false 120 210 180 285
+Polygon -7500403 true true 15 120 150 15 285 120
+Line -16777216 false 30 120 270 120
+
+leaf
+false
+0
+Polygon -7500403 true true 150 210 135 195 120 210 60 210 30 195 60 180 60 165 15 135 30 120 15 105 40 104 45 90 60 90 90 105 105 120 120 120 105 60 120 60 135 30 150 15 165 30 180 60 195 60 180 120 195 120 210 105 240 90 255 90 263 104 285 105 270 120 285 135 240 165 240 180 270 195 240 210 180 210 165 195
+Polygon -7500403 true true 135 195 135 240 120 255 105 255 105 285 135 285 165 240 165 195
+
+line
+true
+0
+Line -7500403 true 150 0 150 300
+
+line half
+true
+0
+Line -7500403 true 150 0 150 150
+
+pentagon
+false
+0
+Polygon -7500403 true true 150 15 15 120 60 285 240 285 285 120
+
+person
+false
+0
+Circle -7500403 true true 110 5 80
+Polygon -7500403 true true 105 90 120 195 90 285 105 300 135 300 150 225 165 300 195 300 210 285 180 195 195 90
+Rectangle -7500403 true true 127 79 172 94
+Polygon -7500403 true true 195 90 240 150 225 180 165 105
+Polygon -7500403 true true 105 90 60 150 75 180 135 105
+
+plant
+false
+0
+Rectangle -7500403 true true 135 90 165 300
+Polygon -7500403 true true 135 255 90 210 45 195 75 255 135 285
+Polygon -7500403 true true 165 255 210 210 255 195 225 255 165 285
+Polygon -7500403 true true 135 180 90 135 45 120 75 180 135 210
+Polygon -7500403 true true 165 180 165 210 225 180 255 120 210 135
+Polygon -7500403 true true 135 105 90 60 45 45 75 105 135 135
+Polygon -7500403 true true 165 105 165 135 225 105 255 45 210 60
+Polygon -7500403 true true 135 90 120 45 150 15 180 45 165 90
+
+square
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+
+square 2
+false
+0
+Rectangle -7500403 true true 30 30 270 270
+Rectangle -16777216 true false 60 60 240 240
+
+star
+false
+0
+Polygon -7500403 true true 151 1 185 108 298 108 207 175 242 282 151 216 59 282 94 175 3 108 116 108
+
+target
+false
+0
+Circle -7500403 true true 0 0 300
+Circle -16777216 true false 30 30 240
+Circle -7500403 true true 60 60 180
+Circle -16777216 true false 90 90 120
+Circle -7500403 true true 120 120 60
+
+tree
+false
+0
+Circle -7500403 true true 118 3 94
+Rectangle -6459832 true false 120 195 180 300
+Circle -7500403 true true 65 21 108
+Circle -7500403 true true 116 41 127
+Circle -7500403 true true 45 90 120
+Circle -7500403 true true 104 74 152
+
+triangle
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+
+triangle 2
+false
+0
+Polygon -7500403 true true 150 30 15 255 285 255
+Polygon -16777216 true false 151 99 225 223 75 224
+
+truck
+false
+0
+Rectangle -7500403 true true 4 45 195 187
+Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Rectangle -1 true false 195 60 195 105
+Polygon -16777216 true false 238 112 252 141 219 141 218 112
+Circle -16777216 true false 234 174 42
+Rectangle -7500403 true true 181 185 214 194
+Circle -16777216 true false 144 174 42
+Circle -16777216 true false 24 174 42
+Circle -7500403 false true 24 174 42
+Circle -7500403 false true 144 174 42
+Circle -7500403 false true 234 174 42
+
+turtle
+true
+0
+Polygon -10899396 true false 215 204 240 233 246 254 228 266 215 252 193 210
+Polygon -10899396 true false 195 90 225 75 245 75 260 89 269 108 261 124 240 105 225 105 210 105
+Polygon -10899396 true false 105 90 75 75 55 75 40 89 31 108 39 124 60 105 75 105 90 105
+Polygon -10899396 true false 132 85 134 64 107 51 108 17 150 2 192 18 192 52 169 65 172 87
+Polygon -10899396 true false 85 204 60 233 54 254 72 266 85 252 107 210
+Polygon -7500403 true true 119 75 179 75 209 101 224 135 220 225 175 261 128 261 81 224 74 135 88 99
+
+wheel
+false
+0
+Circle -7500403 true true 3 3 294
+Circle -16777216 true false 30 30 240
+Line -7500403 true 150 285 150 15
+Line -7500403 true 15 150 285 150
+Circle -7500403 true true 120 120 60
+Line -7500403 true 216 40 79 269
+Line -7500403 true 40 84 269 221
+Line -7500403 true 40 216 269 79
+Line -7500403 true 84 40 221 269
+
+x
+false
+0
+Polygon -7500403 true true 270 75 225 30 30 225 75 270
+Polygon -7500403 true true 30 75 75 30 270 225 225 270
+
+@#$#@#$#@
+NetLogo 3D 5.2.0
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+@#$#@#$#@
+default
+0.0
+-0.2 0 0.0 1.0
+0.0 1 1.0 0.0
+0.2 0 0.0 1.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+
+@#$#@#$#@
+0
+@#$#@#$#@
